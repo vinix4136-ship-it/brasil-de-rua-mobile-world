@@ -30,6 +30,9 @@
  */
 
 @theme inline {
+  --font-display: "Bungee", sans-serif;
+  --font-sans: "Rubik", sans-serif;
+  --color-sky: var(--sky);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -74,8 +77,9 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --sky: oklch(0.82 0.08 225);
+  --background: oklch(0.22 0.04 160);
+  --foreground: oklch(0.98 0.01 95);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
@@ -86,8 +90,8 @@
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
   --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
+  --accent: oklch(0.88 0.18 95);
+  --accent-foreground: oklch(0.2 0.04 160);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.929 0.013 255.508);
@@ -152,4 +156,13 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+}
+
+@layer components {
+  .hud-panel { background: oklch(0.18 0.03 160 / 0.7); color: var(--foreground); backdrop-filter: blur(6px); border: 1px solid oklch(1 0 0 / 0.15); }
+  .hud-pad { background: oklch(0.18 0.03 160 / 0.45); border: 2px solid oklch(1 0 0 / 0.25); }
+  .hud-knob { background: oklch(0.88 0.18 95 / 0.9); box-shadow: 0 4px 16px oklch(0 0 0 / 0.4); }
+  .pedal-gas { background: oklch(0.62 0.17 150); color: oklch(0.98 0.01 95); border-bottom: 6px solid oklch(0.42 0.13 150); }
+  .pedal-brake { background: oklch(0.6 0.2 28); color: oklch(0.98 0.01 95); border-bottom: 6px solid oklch(0.42 0.16 28); }
+  .pedal-gas:active, .pedal-brake:active { transform: translateY(3px); border-bottom-width: 3px; }
 }

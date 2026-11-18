@@ -1,23 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
+import GameView from "@/game/Game";
 
-// The home route ships no og:image, so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  ssr: false,
+  head: () => ({
+    meta: [
+      { title: "Grau Total: Vila Nova — GTA brasileiro no celular" },
+      { name: "description", content: "Dirija pelas ruas da Vila Nova, faça corridas, junte moedas e fuja da polícia. Jogo 3D para celular." },
+      { property: "og:title", content: "Grau Total: Vila Nova" },
+      { property: "og:description", content: "GTA brasileiro em 3D para celular: corridas, grana e fuga da polícia." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: GameView,
 });
-
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
