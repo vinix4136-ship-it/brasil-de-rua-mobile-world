@@ -29,3 +29,5 @@ use the editor.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
 - Game rules live in src/game/sim.ts (no React/three); src/game/Game.tsx only renders and steps it from one useFrame — keeps logic testable.
+- Render world/cars as instanced or merged vertex-coloured meshes (src/game/models.ts) and keep shadows off — mobile FPS budget.
+- HUD and touch controls write to DOM/refs directly (src/game/Hud.tsx), never React state per frame — avoids re-renders during play.
