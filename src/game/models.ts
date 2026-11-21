@@ -4,7 +4,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 function part(g: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0, rx = 0, rz = 0) {
   g.rotateX(rx); g.rotateZ(rz); g.translate(x, y, z);
   const n = g.index ? g.toNonIndexed() : g;
-  const c = new THREE.Color(color), cnt = n.attributes["position"]!.count, arr = new Float32Array(cnt * 3);
+  const c = new THREE.Color(color), cnt = n.getAttribute("position").count, arr = new Float32Array(cnt * 3);
   for (let i = 0; i < cnt; i++) arr.set([c.r, c.g, c.b], i * 3);
   n.setAttribute("color", new THREE.BufferAttribute(arr, 3));
   return n;
@@ -13,7 +13,7 @@ function part(g: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0, rx = 
 /** One merged, vertex-coloured mesh per car = 1 draw call (or 1 for a whole instanced fleet). */
 export function carGeometry({ body = "#ffffff", rims = "#8a8d91", police = false } = {}) {
   const cabin = new THREE.BoxGeometry(1.6, 0.52, 2.1);
-  const p = cabin.attributes["position"]!;
+  const p = cabin.getAttribute("position");
   for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) { p.setZ(i, p.getZ(i) * 0.62 - 0.1); p.setX(i, p.getX(i) * 0.9); }
   const parts = [
     part(new THREE.PlaneGeometry(2.1, 4.5), "#2a2a2a", 0, 0.03, 0, -Math.PI / 2),
@@ -33,7 +33,7 @@ export function carGeometry({ body = "#ffffff", rims = "#8a8d91", police = false
     parts.push(part(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12), "#101010", x, 0.34, z, 0, Math.PI / 2));
     parts.push(part(new THREE.CylinderGeometry(0.22, 0.22, 0.25, 8), rims, x, 0.34, z, 0, Math.PI / 2));
   }
-  return mergeGeometries(parts)!;
+  return mergeGeometries(parts) ?? new THREE.BoxGeometry();
 }
 
 export function lampGeometry() {
@@ -41,12 +41,12 @@ export function lampGeometry() {
     part(new THREE.CylinderGeometry(0.07, 0.1, 6.4, 6), "#55595c", 0, 3.2, 0),
     part(new THREE.BoxGeometry(0.07, 0.07, 1.7), "#55595c", 0, 6.3, 0.85),
     part(new THREE.BoxGeometry(0.28, 0.12, 0.5), "#fff0c4", 0, 6.22, 1.6),
-  ])!;
+  ]) ?? new THREE.BoxGeometry();
 }
 
 function canvasTex(size: number, draw: (x: CanvasRenderingContext2D, s: number) => void, repeat = 1) {
   const c = document.createElement("canvas"); c.width = c.height = size;
-  draw(c.getContext("2d")!, size);
+  const ctx = c.getContext("2d"); if (ctx) draw(ctx, size);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat);
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
@@ -78,8 +78,15 @@ export const plasterTex = () => canvasTex(128, (x, s) => {
   for (let f = 0; f < 2; f++) for (let w = 0; w < 2; w++) {
     const wx = 18 + w * 62, wy = 14 + f * 58;
     x.fillStyle = "#3a3f44"; x.fillRect(wx, wy, 30, 26);
+    x.strokeStyle = "#a5a39a"; x.lineWidth = 1;
+    for (let bar = 0; bar < 5; bar++) { x.beginPath(); x.moveTo(wx + bar * 7, wy); x.lineTo(wx + bar * 7, wy + 26); x.stroke(); }
     x.fillStyle = "#7b7f80"; x.fillRect(wx, wy + 12, 30, 2); x.fillRect(wx + 14, wy, 2, 26);
   }
+  x.strokeStyle = '#4a4641'; x.beginPath(); x.moveTo(0, 62); x.lineTo(s, 68); x.stroke();
+  for (let i = 0; i < 5; i++) { x.fillStyle = ['#cecabd', '#597783', '#bb6b5d'][i % 3] ?? '#cecabd'; x.fillRect(6 + i * 23, 63, 12, 15); }
+  x.fillStyle = '#e4d39f'; x.fillRect(3, 92, 58, 13); x.fillStyle = '#33352b'; x.font = 'bold 8px sans-serif'; x.fillText('MERCEARIA', 5, 102);
+  x.font = 'italic 9px sans-serif'; x.fillText('VILA É NÓS', 52, 122);
+  x.strokeStyle = '#45463d'; x.beginPath(); x.moveTo(107, 3); x.lineTo(107, 18); x.moveTo(96, 5); x.lineTo(120, 5); x.stroke();
 });
 
 export const brickTex = () => canvasTex(128, (x, s) => {

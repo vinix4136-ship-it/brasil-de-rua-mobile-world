@@ -1,4 +1,8 @@
 // Pure game rules: no React, no three.js.
+import { createParticles, burst, stepParticles, type Particle } from './effects';
+import { enterExit, walk } from './player';
+import { createPedestrians, stepPedestrians, shoot, type Pedestrian } from './npc';
+import { createPickups, mission, stepMissions, type Pickup } from './missions';
 export const CELL = 40, BLOCK = 28, N = 8, W = N * CELL, HALF = W / 2;
 
 // Driving feel (player + police share the model)
@@ -8,12 +12,17 @@ export const POLICE_MAXV = 29, CAR_R = 1.4;
 
 export type Car = { x: number; z: number; h: number; v: number; lat: number; steer: number };
 export type Npc = Car & { axis: "x" | "z"; sign: number; color: string };
-export type Input = { throttle: number; steer: number; handbrake: boolean };
+export type Input = { throttle: number; steer: number; handbrake: boolean; run?: boolean; interact?: boolean; fire?: boolean };
 export type Job = { x: number; z: number; time: number; reward: number; label: string };
 export type Game = {
   player: Car; npcs: Npc[]; police: Car[];
   money: number; wanted: number; calmT: number; bustT: number; hitCd: number;
   job: Job; msg: string; msgT: number; t: number;
+  vehicle: Car | null; parked: Car[]; pedestrians: Pedestrian[]; pickups: Pickup[];
+  particles: Particle[]; particleCursor: number; pedProxy: Car; policeInput: Input;
+  cameraYaw: number; walkPhase: number; ammo: number; shotCd: number; shots: number;
+  crashes: number; crashT: number; dustT: number; missionIndex: number; escapeStarted: boolean;
+  radio: number; horn: boolean; day: number;
 };
 
 let seed = 11;
@@ -25,7 +34,7 @@ const car = (x = 0, z = 0, h = 0, v = 0): Car => ({ x, z, h, v, lat: 0, steer: 0
 export type House = { x: number; y: number; z: number; w: number; d: number; h: number; ry: number; color: string; brick: boolean; tank: boolean };
 const PAINT = ["#c9a46b", "#b5654a", "#7d9a7a", "#d8cfbf", "#6f8fa6", "#c98a6a", "#a7a17a", "#e0d6c2", "#9c6b5a", "#8aa3a0"];
 export const HOUSES: House[] = [];
-const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)]!;
+const pick = (a: string[]): string => a[Math.floor(rnd() * a.length)] ?? '';
 for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
   const cx = (i + 0.5) * CELL - HALF, cz = (j + 0.5) * CELL - HALF;
   const gap = 1.6, s = (BLOCK - gap * 2) / 3;
@@ -76,7 +85,7 @@ export function collide(c: Car, r = CAR_R) {
   if (d >= r) return hit;
   if (d < 1e-4) {
     const ox = c.x - cx, oz = c.z - cz;
-    if (Math.abs(ox) > Math.abs(oz)) c.x = cx + Math.sign(ox) * (hb + r); else c.z = cz + Math.sign(oz) * (hb + r);
+    if (Math.abs(ox) > Math.abs(oz)) c.x = cx + Math.sign(ox) * (hb + r); else c.z = cz + (Math.sign(oz) || 1) * (hb + r);
   } else { c.x = px + (dx / d) * r; c.z = pz + (dz / d) * r; }
   return true;
 }
@@ -127,13 +136,17 @@ export function createGame(): Game {
     const k = 1 + Math.floor(rnd() * (N - 1)), axis = rnd() < 0.5 ? "x" : "z", sign = rnd() < 0.5 ? 1 : -1;
     const road = k * CELL - HALF + sign * 2.5 * (axis === "z" ? -1 : 1), along = -HALF + rnd() * W;
     const h = axis === "z" ? (sign > 0 ? 0 : Math.PI) : sign > 0 ? Math.PI / 2 : -Math.PI / 2;
-    npcs.push({ ...car(axis === "z" ? road : along, axis === "z" ? along : road, h, 7 + rnd() * 6), axis, sign, color: NPC_COLORS[n % NPC_COLORS.length]! });
+    npcs.push({ ...car(axis === "z" ? road : along, axis === "z" ? along : road, h, 7 + rnd() * 6), axis, sign, color: NPC_COLORS[n % NPC_COLORS.length] ?? '#777777' });
   }
   const g: Game = {
     player: car(), npcs, police: [], money: 0, wanted: 0, calmT: 0, bustT: 0, hitCd: 0,
-    job: null as unknown as Job, msg: "Vila Nova", msgT: 3, t: 0,
+    job: { x: 0, z: 0, time: 180, reward: 400, label: 'Leve o carro até o destino' }, msg: 'OUTLAWED · Vila Nova', msgT: 3, t: 0,
+    vehicle: null, parked: [car(2.8, 3.5)], pedestrians: createPedestrians(), pickups: createPickups(),
+    particles: createParticles(), particleCursor: 0, pedProxy: car(), policeInput: { throttle: 1, steer: 0, handbrake: false },
+    cameraYaw: 0, walkPhase: 0, ammo: 60, shotCd: 0, shots: 0, crashes: 0, crashT: 0, dustT: 0,
+    missionIndex: 0, escapeStarted: false, radio: 1, horn: false, day: 0,
   };
-  g.job = newJob(g);
+  g.job = mission(g);
   return g;
 }
 
@@ -142,15 +155,24 @@ function say(g: Game, m: string) { g.msg = m; g.msgT = 3; }
 export function step(g: Game, inp: Input, dt: number) {
   const p = g.player;
   g.t += dt; g.msgT -= dt; g.hitCd -= dt;
-  stepCar(p, inp, dt);
+  g.shotCd -= dt; g.crashT -= dt; g.day = (g.day + dt / 600) % 1;
+  if (inp.interact) { enterExit(g); inp.interact = false; }
+  if (inp.fire) shoot(g);
+  if (g.vehicle) {
+    if (stepCar(p, inp, dt) && g.crashT <= 0) { g.crashT = 0.4; g.crashes++; burst(g, p.x, p.z, 1, 12); }
+    Object.assign(g.vehicle, p);
+    g.dustT -= dt;
+    if (inp.handbrake && Math.abs(p.v) > 4 && g.dustT <= 0) { burst(g, p.x, p.z, 0, 3); g.dustT = 0.06; }
+  } else walk(g, inp, dt);
 
   for (const n of g.npcs) {
+    if (n === g.vehicle) continue;
     if (n.axis === "z") { n.z += n.sign * n.v * dt; if (Math.abs(n.z) > HALF) n.z = -n.sign * HALF; }
     else { n.x += n.sign * n.v * dt; if (Math.abs(n.x) > HALF) n.x = -n.sign * HALF; }
     const dx = n.x - p.x, dz = n.z - p.z, d2 = dx * dx + dz * dz;
-    if (d2 < 9 && d2 > 0) {
+    if (g.vehicle && d2 < 9 && d2 > 0) {
       const d = Math.sqrt(d2);
-      p.x -= (dx / d) * (3 - d); p.z -= (dz / d) * (3 - d); p.v *= 0.4;
+      p.x -= (dx / d) * (3 - d); p.z -= (dz / d) * (3 - d); p.v *= 0.4; g.crashes++; g.crashT = 0.4; burst(g, p.x, p.z, 1, 10);
       if (g.hitCd <= 0) { g.hitCd = 1.5; g.wanted = Math.min(5, g.wanted + 1); g.calmT = 0; say(g, "Procurado"); }
     }
   }
@@ -164,10 +186,12 @@ export function step(g: Game, inp: Input, dt: number) {
   if (g.police.length > g.wanted) g.police.length = g.wanted;
   let near = false;
   for (const c of g.police) {
+    if (c === g.vehicle) continue;
     const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
     let diff = Math.atan2(dx, dz) - c.h;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    if (stepCar(c, { throttle: d < 6 ? 0.2 : 1, steer: -clamp(diff * 2.5, -1, 1), handbrake: false }, dt, POLICE_MAXV)) c.h += (rnd() - 0.5) * 2;
+    g.policeInput.throttle = d < 6 ? 0.2 : 1; g.policeInput.steer = -clamp(diff * 2.5, -1, 1);
+    if (stepCar(c, g.policeInput, dt, POLICE_MAXV)) c.h += (rnd() - 0.5) * 2;
     if (d < 40) near = true;
     if (d < 3.2) { p.v *= 0.92; if (Math.abs(p.v) < 6) g.bustT += dt; }
   }
@@ -178,11 +202,12 @@ export function step(g: Game, inp: Input, dt: number) {
   if (!g.police.length) g.bustT = 0;
   if (g.bustT > 1.5) {
     g.money = Math.floor(g.money / 2); g.wanted = 0; g.police = []; g.bustT = 0;
-    Object.assign(p, car()); say(g, "Enquadrado — perdeu metade");
+    if (g.vehicle) g.vehicle.v = 0;
+    g.vehicle = null; p.x = 0; p.z = 0; p.v = 0; p.lat = 0; p.h = 0; say(g, "Enquadrado — perdeu metade");
   }
 
-  const j = g.job;
-  j.time -= dt;
-  if (Math.hypot(j.x - p.x, j.z - p.z) < 5) { g.money += j.reward; say(g, `+R$ ${j.reward}`); g.job = newJob(g); }
-  else if (j.time <= 0) g.job = newJob(g);
+  stepPedestrians(g, dt);
+  stepMissions(g, dt);
+  stepParticles(g, dt);
+  if (g.vehicle) Object.assign(g.vehicle, p);
 }
